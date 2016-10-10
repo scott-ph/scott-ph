@@ -1,0 +1,227 @@
+<html>
+ <head>
+  <title>Auto Generating GObject Bindings for libva</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.3.0/css/reveal.min.css" integrity="sha256-xQbuiMQSQySqhEhPK5DcB34BNZEh+zxY90b9tjXozE8=" crossorigin="anonymous" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.3.0/css/theme/white.min.css" integrity="sha256-PXOysmpXs4/In6NCY01R1iKv9aXU41IIuVNffAGqkqU=" crossorigin="anonymous" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.3.0/lib/css/zenburn.min.css" integrity="sha256-RG50KM9jAN3mc0u2xgR6UrcI20cttg4DxfMHZ05zr7I=" crossorigin="anonymous" />
+  <style>
+.reveal h1, .reveal h2, .reveal h3, .reveal h4, .reveal h5, .reveal h6 { text-transform: initial; }
+.reveal pre code { max-height: initial; }
+  </style>
+ </head>
+ <body>
+  <div class="reveal">
+   <div class="slides">
+    <section data-markdown>
+     <script type="text/template">
+## Auto Generating GObject Bindings For libva
+
+<br>
+
+### Scott D Phillips, Intel*
+
+<small>GStreamer Conference 2016 Lightning Talk</small>
+     </script>
+    </section>
+    <section data-markdown>
+     <script type="text/template">
+## Q: Why Generate GObject Bindings?
+
+### A: If you don't generate them then you hand write them
+     </script>      
+    </section>
+    <section data-markdown>
+     <script type="text/template">
+libva is an object-based API but in C, so no automatic lifecycle management for your objects
+
+```bash
+$ grep -e Create -e Destroy va/va.h
+VAStatus vaCreateBuffer (
+VAStatus vaDestroyBuffer (
+VAStatus vaCreateConfig (
+VAStatus vaDestroyConfig (
+VAStatus vaCreateContext (
+VAStatus vaDestroyContext (
+VAStatus vaCreateImage (
+VAStatus vaDestroyImage (
+VAStatus vaCreateSubpicture (
+VAStatus vaDestroySubpicture (
+VAStatus vaCreateSurfaces (
+VAStatus vaDestroySurfaces (
+```
+```c
+/**
+ * After this call, the buffer is deleted and this buffer_id is no
+ * longer valid.  Only call this if the buffer is not going to be
+ * passed to vaRenderBuffer
+ */
+VAStatus vaDestroyBuffer (
+```
+     </script>
+    </section>
+    <section data-markdown>
+     <script type="text/template">
+## Q: How to do it?
+
+1. Start with g-ir-scanner to get a .gir with all your enums and types and functions and so on.
+1. Post-process up the .gir to make it look more GObjecty
+1. Write new classes to handle lifecycles and pretty up the API.
+     </script>
+    </section>
+    <section data-markdown data-separator-notes="^Note:">
+     <script type="text/template">
+## 1. Start with g-ir-scanner to get a .gir with all your enums and types and functions and so on.
+
+```bash
+g-ir-scanner --warn-all --library va --namespace Va \
+  --nsversion 1.0 --accept-unprefixed --output Va-1.0.gir \
+  --pkg libva /usr/include/va/*.h
+```
+
+Note:
+don't actually pull in *.h in the real script
+     </script>
+    </section>
+    <section data-markdown>
+     <script type="text/template">
+## 2. Post-process up the .gir to make it look more GObjecty
+
+* camelCase to snake_case for function names
+* Remove common substrings in enum elements
+* A little type fiddling with some naked pointers
+     </script>
+    </section>
+    <section>
+     <section data-markdown>
+      <script type="text/template">
+## 3. Write new classes to handle lifecycles and pretty up the API.
+
+```vala
+public class Surface : Object {
+
+public Display d;
+public Va.SurfaceID id;
+
+public Surface (Display display, Va.SurfaceID surface_id)
+{
+  d = display;
+  id = surface_id;
+}
+
+~Surface ()
+{
+  Va.destroy_surfaces (d.disp, ref id, 1);
+  id = Va.INVALID_ID;
+}
+```
+      </script>
+     </section>
+     <section data-markdown>
+      <script type="text/template">
+```vala
+public Va.Status
+sync ()
+{
+  return Va.sync_surface (d.disp, id);
+}
+
+public Image?
+derive_image ()
+{
+  Va.Image image = {0};
+
+  var status = Va.derive_image (d.disp, id, ref image);
+
+  if (status == Va.STATUS_SUCCESS)
+    return new Image (d, image);
+  else
+    return null;
+}
+```
+      </script>
+     </section>
+    </section>
+    <section>
+     <section data-markdown>
+      <script type="text/template">
+### And then use it from python why not?
+
+#### initialization
+
+```
+va_disp = GVa.Display.new (VaX.vaGetDisplay (display))
+config = va_disp.create_config (Va.Profile.H264_MAIN, Va.Entrypoint.VLD, [])
+context = config.create_context (1920, 1080, Va.PROGRESSIVE, [])
+
+infile_map = mmap.mmap (os.open (sys.argv[1], os.O_RDWR), 0)
+infile = ctypes.addressof (ctypes.c_ubyte.from_buffer (infile_map))
+parser = GVaH264.Parser.new ()
+dpb = GVaH264.DPB.new ()
+parser.set_stream (infile, infile_map.size ())
+surfaces = collections.defaultdict (lambda: va_disp.create_surface (
+    Va.RT_FORMAT_YUV420, 1920, 1080, []))
+```
+      </script>
+     </section>
+     <section data-markdown>
+      <script type="text/template">
+#### reference management
+
+```
+def update_surface_ids (au):
+  pp = au.pic_param ()
+  s = surfaces[pp.CurrPic.picture_id]
+  pp.CurrPic.picture_id = s.id
+  for frame_nr in range (16):
+    pic = GVaH264.Util.pic_param_reference_frame (pp, frame_nr)
+    if pic.flags & Va.PICTURE_H264_INVALID != 0:
+      break
+    pic.picture_id = surfaces[pic.picture_id].id
+  for slice_nr in itertools.count ():
+    slice = au.slice_param (slice_nr)
+    if slice is None:
+      break
+    for reflist in (0, 1):
+      for i in range (32):
+        pic = GVaH264.Util.slice_param_ref_pic_list (slice, reflist, i)
+        if pic.flags & Va.PICTURE_H264_INVALID != 0:
+          break
+        pic.picture_id = surfaces[pic.picture_id].id
+  return s
+```
+      </script>
+     </section>
+     <section data-markdown>
+      <script type="text/template">
+#### main loop
+
+```
+while True:
+  au = parser.parse_one_au ()
+  if not au:
+    break
+  _,to_output = dpb.update_one_au (au)
+  for o in to_output:
+    VaX11.put_surface (va_disp.disp, surfaces[o].id, window, 0, 0, 1920, 1080,
+        0, 0, 1920, 1080, Va.Rectangle (), 0, 0)
+  surface = update_surface_ids (au)
+  buffers = au.make_buffers (context)
+  context.begin_picture (surface)
+  context.render_picture (buffers)
+  context.end_picture ()
+```
+      </script>
+     </section>
+    </section>
+   </div>
+  </div>
+  <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.3.0/js/reveal.min.js" integrity="sha256-lvaInSKflJWLPqf5N5oHr/UZFwXKD6gckerdwoHqECY=" crossorigin="anonymous"></script>
+  <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.3.0/plugin/markdown/marked.min.js" integrity="sha256-A6ppjjD81U4M0tjPFQfTMyAZz9of6lq8l4ZpGh4YJyA=" crossorigin="anonymous"></script>
+  <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.3.0/plugin/markdown/markdown.min.js" integrity="sha256-UgAZjfmcKh846OrpvJLh1R1bOjeW48TxOJYIlR0l+wg=" crossorigin="anonymous"></script>
+  <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.3.0/plugin/highlight/highlight.min.js" integrity="sha256-Odtb8sREkNZHFwLNtq04B6iYEC19dGGxeMwlX1YpquA=" crossorigin="anonymous"></script>
+  <script>
+   Reveal.initialize({showNotes: true});
+   hljs.initHighlightingOnLoad();
+  </script>
+ </body>
+</html>
