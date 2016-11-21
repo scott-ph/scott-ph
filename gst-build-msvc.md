@@ -44,6 +44,6 @@
 * In the new window
 
   ```dos
-  PATH=C:\msys64\mingw64\bin;C:\mingw64\usr\bin;%PATH%;%HOMEDRIVE%%HOMEPATH%\gst-build\build\dll
+  PATH=C:\msys64\mingw64\bin;C:\mingw64\usr\bin;%PATH%;%HOMEDRIVE%%HOMEPATH%\Downloads\gst-build\build\dll
   gst-inspect-1.0
   ```
