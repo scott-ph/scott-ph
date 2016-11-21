@@ -1,7 +1,3 @@
----
-title: gst-build with MSVC
----
-
 1. install [visual c++ build tools](https://www.visualstudio.com/downloads/#microsoft-visual-c-build-tools-2015-update-3)
 * install [python](https://www.python.org/ftp/python/3.5.2/python-3.5.2-amd64.exe)
  * select adding to path
