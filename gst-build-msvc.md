@@ -34,7 +34,7 @@
   git clone git://anongit.freedesktop.org/gstreamer/gst-build
   cd gst-build
   git clone https://github.com/mesonbuild/meson
-  $env:PATH += ';C:\msys64\mingw64\bin;C:\msys64\usr\bin;C:\Program Files (x86)\Windows Kits\10\bin\x64\ucrt`
+  $env:PATH += ';C:\msys64\mingw64\bin;C:\msys64\usr\bin;C:\Program Files (x86)\Windows Kits\10\bin\x64\ucrt'
   $env:PATH += ";$env:HOMEDRIVE$env:HOMEPATH\Downloads\ninja-win"
   py setup
   ninja -C build
