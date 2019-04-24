@@ -1,0 +1,60 @@
+<html>
+ <head>
+  <title>scott.ph -- Kicking the tires on bhyve UEFI HTTP Boot</title>
+  <style>
+main {
+  max-width: 38rem;
+  padding: 2rem;
+  margin: auto;
+}
+  </style>
+ </head>
+ <body>
+  <main>
+   <a href="/">/</a>
+   <h1>Kicking the tires on bhyve UEFI HTTP Boot</h1>
+   <p>The -devel port for bhyve's uefi firmware has just
+      been <a href="https://svnweb.freebsd.org/ports?view=revision&revision=499851">committed</a>. Here's
+      a sketch of how you can kick the tires and give it a try:</p>
+
+   <p>HTTP boot can boot either a UEFI binary (like loader.efi) or a
+      disk image, which it will set up as a ramdisk and boot in the
+      normal UEFI way. One easy way to try out HTTP boot is to set it
+      up to boot the installer image straight from the URL:</p>
+
+   <p><pre>http://ftp.freebsd.org/pub/FreeBSD/releases/amd64/amd64/ISO-IMAGES/12.0/FreeBSD-12.0-RELEASE-amd64-bootonly.iso</pre></p>
+
+   <p>The easiest way to arrange for that is to type `exit` at the EFI
+      shell to be taken to the configuration UI, and then go through
+      the menus to:</p>
+
+   <p>Device Manager >> Network Device List >> MAC:xx:xx:xx:xx:xx:xx
+      >> HTTP Boot Configuration >> Boot URI</p>
+
+   <p>and paste in the URL. This creates a new boot option for HTTP
+      with the given URL. Then go back to the top of the configuration
+      menus and go to:</p>
+
+   <p>Boot Maintenance Manager >> Boot Options >> Change Boot
+      Order</p>
+
+   <p>make the newly created HTTP boot option the first one and commit
+      that change.</p>
+
+   <p>When you get to the FreeBSD loader, escape to the loader prompt
+      and do:</p>
+
+   <pre>
+  load /boot/kernel/kernel
+  load /boot/kernel/nvdimm.ko
+  boot
+   </pre>
+
+   <p>The nvdimm kernel module is needed to recognize the ram disk
+      that UEFI has created. You should then boot to a working
+      system. bsdinstall failed for me when I tried to do an install,
+      I think because it wants to use a place on the cd9660
+      filesystem as its DISTDIR.</p>
+  </main>
+ </body>
+</html>
